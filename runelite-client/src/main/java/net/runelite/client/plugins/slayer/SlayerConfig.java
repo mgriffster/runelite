@@ -35,10 +35,10 @@ import net.runelite.client.config.Units;
 public interface SlayerConfig extends Config
 {
 	@ConfigItem(
-		position = 1,
-		keyName = "infobox",
-		name = "Task InfoBox",
-		description = "Display task information in an InfoBox"
+			position = 1,
+			keyName = "infobox",
+			name = "Task InfoBox",
+			description = "Display task information in an InfoBox"
 	)
 	default boolean showInfobox()
 	{
