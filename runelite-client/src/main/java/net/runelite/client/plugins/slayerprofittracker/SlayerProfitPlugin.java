@@ -54,46 +54,9 @@ public class SlayerProfitPlugin extends Plugin {
     }
 
     @Subscribe
-    public void onGameStateChanged(GameStateChanged gameState){
-        if(gameState.getGameState() == GameState.LOGGED_IN){
-            chatCommandManager.registerCommandAsync("!test", this::test1, this::test2);
-        }
-    }
-
-    @Subscribe
     public void onActorDeath(ActorDeath actorDeath){
         Actor actor = actorDeath.getActor();
         log.debug("ACTOR DEATH: "+ actor.getName());
     }
-
-
-    @Subscribe
-    public void onNpcLootReceived(final NpcLootReceived npcLootReceived)
-    {
-        final NPC npc = npcLootReceived.getNpc();
-        final Collection<ItemStack> items = npcLootReceived.getItems();
-        final String name = npc.getName();
-        StringBuilder sb = new StringBuilder();
-        int totalGold = 0;
-        for(ItemStack item : items){
-            sb.append(item.getId());
-            sb.append("|");
-            sb.append(item.getQuantity());
-            sb.append(" ");
-            totalGold += itemManager.getItemPrice(item.getId());
-        }
-
-        log.debug(name + "= " + totalGold + "GP || " +sb.toString());
-    }
-
-    private boolean test2(ChatInput chatInput, String s) {
-        log.debug("TEST2");
-        return true;
-    }
-
-    private void test1(ChatMessage chatMessage, String s) {
-        log.debug("TEST1");
-    }
-
 
 }

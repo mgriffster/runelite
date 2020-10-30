@@ -33,11 +33,7 @@ import java.io.IOException;
 import static java.lang.Integer.max;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -79,7 +75,9 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ChatInput;
 import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.events.NpcLootReceived;
 import net.runelite.client.game.ItemManager;
+import net.runelite.client.game.ItemStack;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
@@ -601,6 +599,31 @@ public class SlayerPlugin extends Plugin
 			log.debug("Tagged NPC {} has died", actor.getName());
 			++taggedNpcsDiedThisTick;
 		}
+	}
+
+	@Subscribe
+	public void onNpcLootReceived(final NpcLootReceived npcLootReceived)
+	{
+		final NPC npc = npcLootReceived.getNpc();
+
+		if(isTarget(npc)){
+            final Collection<ItemStack> items = npcLootReceived.getItems();
+            final String name = npc.getName();
+            StringBuilder sb = new StringBuilder();
+            int totalGold = 0;
+            for(ItemStack item : items){
+                sb.append(item.getId());
+                sb.append("|");
+                sb.append(item.getQuantity());
+                sb.append(" ");
+                totalGold += itemManager.getItemPrice(item.getId());
+            }
+
+            log.debug(name + "= " + totalGold + "GP || " +sb.toString());
+        }
+
+
+
 	}
 
 	@Subscribe
