@@ -34,6 +34,8 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import static java.lang.Integer.max;
+
+import java.text.DecimalFormat;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -639,7 +641,7 @@ public class SlayerPlugin extends Plugin
 				}
             	config.currentGold(config.currentGold() + price);
             	addProfitBox();
-				profitbox.setCount(config.currentGold());
+				profitbox.setCount(config.currentGold() / 10000);
 				int existingTaskGold = taskToGoldMap.containsKey(taskName) ? taskToGoldMap.get(taskName).getTotalGold() : 0;
 
 				String goldToolTip = ColorUtil.wrapWithColorTag("%s", new Color(255, 119, 0)) + "</br>";
@@ -648,10 +650,26 @@ public class SlayerPlugin extends Plugin
 						+ " %s</br>"
 						+ ColorUtil.wrapWithColorTag("Lifetime:", Color.YELLOW)
 						+ " %s";
-				profitbox.setTooltip(String.format(goldToolTip, capsString(taskName), config.currentGold(), existingTaskGold + config.currentGold()));
+				profitbox.setTooltip(String.format(goldToolTip, capsString(taskName), formatProfitBoxGold(config.currentGold()), formatProfitBoxGold(existingTaskGold + config.currentGold())));
             }
 
         }
+	}
+
+	private String formatProfitBoxGold(int gold){
+		if(gold > 10000000){
+			DecimalFormat df = new DecimalFormat("#.0");
+			double millions = (double)gold/1000000.0;
+			return df.format(millions) + "M";
+		}
+		else if(gold > 10000){
+			DecimalFormat df = new DecimalFormat("#.0");
+			int millions = gold/1000;
+			return (millions) + "K";
+		}
+		else{
+			return String.valueOf(gold);
+		}
 	}
 
 	private void addTaskToProfitMap(String taskName){
@@ -945,7 +963,7 @@ void killed(int amt)
 
 			profitbox = new TaskCounter(goldImg, this, config.currentGold());
 			int existingTaskGold = taskToGoldMap.containsKey(taskName) ? taskToGoldMap.get(taskName).getTotalGold() : 0;
-			profitbox.setTooltip(String.format(goldToolTip, capsString(taskName), config.currentGold(), existingTaskGold + config.currentGold()));
+			profitbox.setTooltip(String.format(goldToolTip, capsString(taskName), formatProfitBoxGold(config.currentGold()), formatProfitBoxGold(existingTaskGold + config.currentGold())));
 
 			infoBoxManager.addInfoBox(profitbox);
 		}
