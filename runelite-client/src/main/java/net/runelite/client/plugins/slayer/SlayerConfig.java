@@ -122,6 +122,27 @@ public interface SlayerConfig extends Config
 	{
 		return true;
 	}
+	@ConfigItem(
+			position = 9,
+			keyName = "valueCutoff",
+			name = "Profit Tracker: Value cutoff",
+			description = "Exclude the price of items under the threshold from being added to the total task drop value"
+	)
+	default int valueCutoff(){return 0;}
+	@ConfigItem(
+			position = 10,
+			keyName = "exclude100",
+			name = "Profit Tracker: Include 100% items",
+			description = "Choose to include all (including 100% drops like ashes), none, or just Wyrm Bones or better."
+	)
+	default ExcludedItems excludedItems(){return ExcludedItems.INCLUDE_ALL;}
+	@ConfigItem(
+			position = 11,
+			keyName = "profitBox",
+			name = "Profit InfoBox",
+			description = "Display profit information for current task in an InfoBox"
+	)
+	default boolean showProfitBox(){ return true; }
 
 	// Stored data
 	@ConfigItem(
@@ -266,4 +287,19 @@ public interface SlayerConfig extends Config
 		description = ""
 	)
 	void slaughter(int slaughter);
+
+	@ConfigItem(
+			keyName="gold",
+			name ="",
+			description="",
+			hidden = true
+	)
+	default int currentGold(){ return 0; }
+
+	@ConfigItem(
+			keyName="gold",
+			name ="",
+			description=""
+	)
+	void currentGold(int currentGold);
 }

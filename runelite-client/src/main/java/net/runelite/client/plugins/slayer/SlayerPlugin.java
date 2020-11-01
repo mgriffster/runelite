@@ -25,10 +25,13 @@
  */
 package net.runelite.client.plugins.slayer;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.inject.Provides;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import java.io.File;
 import java.io.IOException;
 import static java.lang.Integer.max;
 import java.time.Duration;
@@ -38,30 +41,18 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.inject.Inject;
+
 import joptsimple.internal.Strings;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.Actor;
-import net.runelite.api.ChatMessageType;
-import net.runelite.api.Client;
-import net.runelite.api.GameState;
-import net.runelite.api.Hitsplat;
-import net.runelite.api.ItemID;
-import net.runelite.api.MessageNode;
-import net.runelite.api.NPC;
-import net.runelite.api.NPCComposition;
+import net.runelite.api.*;
+import com.google.common.collect.HashMultiset;
+
 import static net.runelite.api.Skill.SLAYER;
 import net.runelite.api.coords.WorldPoint;
-import net.runelite.api.events.ActorDeath;
-import net.runelite.api.events.ChatMessage;
-import net.runelite.api.events.GameStateChanged;
-import net.runelite.api.events.GameTick;
-import net.runelite.api.events.HitsplatApplied;
-import net.runelite.api.events.NpcDespawned;
-import net.runelite.api.events.NpcSpawned;
-import net.runelite.api.events.StatChanged;
+import net.runelite.api.events.*;
 import net.runelite.api.vars.SlayerUnlock;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetInfo;
@@ -94,6 +85,17 @@ import net.runelite.http.api.chat.ChatClient;
 @Slf4j
 public class SlayerPlugin extends Plugin
 {
+
+	//Excluded item lists for profit tracker
+	static final List<Integer> lowBones = Arrays.asList(526, 527,280,281,282,283,529,530,531,532,533,534,535,2530,2531,
+			2859,2860,3123,3124,3125,3126,3127,3128,3129,3179,3180,3181,3182,3183,3184,3185,3186,3187,4812,4813,15589,12839
+			,24655,19271,592,593);
+
+	static final List<Integer> allBones = Arrays.asList(526, 527,280,281,282,283,529,530,531,532,533,534,535,2530,2531,
+			2859,2860,3123,3124,3125,3126,3127,3128,3129,3179,3180,3181,3182,3183,3184,3185,3186,3187,4812,4813,15589,12839
+			,24655,22780,22781,22782,536,11943,22124,537,11944,22125,19272,19273,19271,4830,4832,4834,4831,4833,4835,6729,6730,
+			22786,22787,22783,22784,592,593);
+
 	//Chat messages
 	private static final Pattern CHAT_GEM_PROGRESS_MESSAGE = Pattern.compile("^(?:You're assigned to kill|You have received a new Slayer assignment from .*:) (?:[Tt]he )?(?<name>.+?)(?: (?:in|on|south of) (?:the )?(?<location>[^;]+))?(?:; only | \\()(?<amount>\\d+)(?: more to go\\.|\\))$");
 	private static final String CHAT_GEM_COMPLETE_MESSAGE = "You need something new to hunt.";
@@ -208,10 +210,15 @@ public class SlayerPlugin extends Plugin
 	private String taskName;
 
 	private TaskCounter counter;
+	private TaskCounter profitbox;
 	private int cachedXp = -1;
 	private Instant infoTimer;
 	private boolean loginFlag;
+	private boolean saveFlag = false;
 	private List<String> targetNames = new ArrayList<>();
+
+	//Profit tracker
+	private Map<String, ProfitEntry> taskToGoldMap = new HashMap<>();
 
 	@Override
 	protected void startUp() throws Exception
@@ -233,7 +240,7 @@ public class SlayerPlugin extends Plugin
 				clientThread.invoke(() -> setTask(config.taskName(), config.amount(), config.initialAmount(), config.taskLocation(), false));
 			}
 		}
-
+		fetchProfitFromFile();
 		chatCommandManager.registerCommandAsync(TASK_COMMAND_STRING, this::taskLookup, this::taskSubmit);
 	}
 
@@ -245,10 +252,11 @@ public class SlayerPlugin extends Plugin
 		overlayManager.remove(targetWeaknessOverlay);
 		overlayManager.remove(targetMinimapOverlay);
 		removeCounter();
+		removeProfitBox();
 		highlightedTargets.clear();
 		taggedNpcs.clear();
 		cachedXp = -1;
-
+		dumpProfitToFile();
 		chatCommandManager.unregisterCommand(TASK_COMMAND_STRING);
 	}
 
@@ -269,6 +277,7 @@ public class SlayerPlugin extends Plugin
 				taskName = "";
 				amount = 0;
 				loginFlag = true;
+				saveFlag = true;
 				highlightedTargets.clear();
 				taggedNpcs.clear();
 				break;
@@ -283,6 +292,11 @@ public class SlayerPlugin extends Plugin
 					loginFlag = false;
 				}
 				break;
+			case LOGIN_SCREEN:
+				if(taskToGoldMap != null && saveFlag){
+					dumpProfitToFile();
+					saveFlag = false;
+				}
 		}
 	}
 
@@ -400,6 +414,7 @@ public class SlayerPlugin extends Plugin
 
 			if (timeSinceInfobox.compareTo(statTimeout) >= 0)
 			{
+				removeProfitBox();
 				removeCounter();
 			}
 		}
@@ -494,13 +509,15 @@ public class SlayerPlugin extends Plugin
 			{
 				config.points(points);
 			}
-
+			saveTaskGoldToMap(config.taskName());
+			incrementProfitTask(config.taskName());
 			setTask("", 0, 0);
 			return;
 		}
 
 		if (chatMsg.equals(CHAT_GEM_COMPLETE_MESSAGE) || chatMsg.equals(CHAT_CANCEL_MESSAGE) || chatMsg.equals(CHAT_CANCEL_MESSAGE_JAD) || chatMsg.equals(CHAT_CANCEL_MESSAGE_ZUK))
 		{
+			saveTaskGoldToMap(config.taskName());
 			setTask("", 0, 0);
 			return;
 		}
@@ -607,29 +624,109 @@ public class SlayerPlugin extends Plugin
 		final NPC npc = npcLootReceived.getNpc();
 
 		if(isTarget(npc)){
+			ExcludedItems excludedItems = config.excludedItems();
             final Collection<ItemStack> items = npcLootReceived.getItems();
             final String name = npc.getName();
-            StringBuilder sb = new StringBuilder();
-            int totalGold = 0;
             for(ItemStack item : items){
-                sb.append(item.getId());
-                sb.append("|");
-                sb.append(item.getQuantity());
-                sb.append(" ");
-                totalGold += itemManager.getItemPrice(item.getId());
+            	//Check if the item should be excluded from consideration for task loot value
+            	if(excludedItems.getExcludeList() != null
+						&& excludedItems.getExcludeList().contains(item.getId())){
+            		continue;
+				}
+            	int price = itemManager.getItemPrice(item.getId()) * item.getQuantity();
+            	if(config.valueCutoff() > price){
+            		continue;
+				}
+            	config.currentGold(config.currentGold() + price);
+            	addProfitBox();
+				profitbox.setCount(config.currentGold());
+				int existingTaskGold = taskToGoldMap.containsKey(taskName) ? taskToGoldMap.get(taskName).getTotalGold() : 0;
+
+				String goldToolTip = ColorUtil.wrapWithColorTag("%s", new Color(255, 119, 0)) + "</br>";
+
+				goldToolTip += ColorUtil.wrapWithColorTag("This Task:", Color.YELLOW)
+						+ " %s</br>"
+						+ ColorUtil.wrapWithColorTag("Lifetime:", Color.YELLOW)
+						+ " %s";
+				profitbox.setTooltip(String.format(goldToolTip, capsString(taskName), config.currentGold(), existingTaskGold + config.currentGold()));
             }
 
-            log.debug(name + "= " + totalGold + "GP || " +sb.toString());
         }
+	}
 
+	private void addTaskToProfitMap(String taskName){
+		if(!taskToGoldMap.containsKey(taskName)){
+			taskToGoldMap.put(taskName, new ProfitEntry());
+		}
+	}
 
+	private void saveTaskGoldToMap(String taskName){
+		if(taskName != null && !taskName.isEmpty()){
+			if(taskToGoldMap.containsKey(taskName)){
+				ProfitEntry oldInfo = taskToGoldMap.get(taskName);
+				oldInfo.setTotalGold(oldInfo.getTotalGold() + config.currentGold());
+			}
+			else{
+				taskToGoldMap.put(taskName, new ProfitEntry(config.currentGold(), 0 ,0));
+			}
+			config.currentGold(0);
+		}
+	}
+
+	private void incrementProfitTask(String taskName){
+		if(taskName != null && taskToGoldMap.containsKey(taskName)){
+			ProfitEntry taskEntry = taskToGoldMap.get(taskName);
+			taskEntry.setTaskCount(taskEntry.getTaskCount()+1);
+		}
+		else{
+			log.debug("Attempt to increment task for "+ taskName+" was unsuccessful");
+		}
+	}
+
+	private void incrementProfitKill(String taskName, int amt){
+		if(taskName != null && taskToGoldMap.containsKey(taskName)){
+			ProfitEntry taskEntry = taskToGoldMap.get(taskName);
+			taskEntry.setKillCount(taskEntry.getKillCount()+amt);
+		}else{
+			log.debug("Attempt to increment kill for "+ taskName+ " | " + amt +" was unsuccessful");
+		}
+	}
+
+	private void dumpProfitToFile(){
+		saveTaskGoldToMap(taskName);
+		ObjectMapper mapper = new ObjectMapper();
+		try{
+			log.debug("PROFIT MAP SAVE: " + taskToGoldMap.toString());
+			mapper.writeValue(new File("SlayerProfit.json"), taskToGoldMap);
+		}
+		catch(Exception e){
+			log.error("Error while saving profits to JSON file: " + e.toString());
+		}
+
+	}
+
+	private void fetchProfitFromFile(){
+		ObjectMapper mapper = new ObjectMapper();
+		try{
+			File json = new File("SlayerProfit.json");
+			if(json.exists()){
+				taskToGoldMap = mapper.readValue(json, new TypeReference<Map<String, ProfitEntry>>(){});
+				log.debug("PROFIT MAP LOAD: " + taskToGoldMap.toString());
+			}
+			else{
+				taskToGoldMap = new HashMap<>();
+			}
+		}
+		catch(Exception e){
+			log.error("Error while fetching profits from JSON file: " + e.toString());
+		}
 
 	}
 
 	@Subscribe
 	private void onConfigChanged(ConfigChanged event)
 	{
-		if (!event.getGroup().equals("slayer") || !event.getKey().equals("infobox"))
+		if (!event.getGroup().equals("slayer") || !event.getKey().equals("infobox") || !event.getKey().equals("profitBox"))
 		{
 			return;
 		}
@@ -642,10 +739,17 @@ public class SlayerPlugin extends Plugin
 		{
 			removeCounter();
 		}
+
+		if(config.showProfitBox()){
+			clientThread.invoke(this::addProfitBox);
+		}
+		else{
+			removeProfitBox();
+		}
 	}
 
 	@VisibleForTesting
-	void killed(int amt)
+void killed(int amt)
 	{
 		if (amount == 0)
 		{
@@ -667,6 +771,7 @@ public class SlayerPlugin extends Plugin
 		}
 
 		// add and update counter, set timer
+		incrementProfitKill(taskName, amt);
 		addCounter();
 		counter.setCount(amount);
 		infoTimer = Instant.now();
@@ -757,14 +862,16 @@ public class SlayerPlugin extends Plugin
 		taskLocation = location;
 		save();
 		removeCounter();
-
+		removeProfitBox();
 		if (addCounter)
 		{
 			infoTimer = Instant.now();
 			addCounter();
+			addProfitBox();
 		}
 
 		Task task = Task.getTask(name);
+		addTaskToProfitMap(taskName);
 		rebuildTargetNames(task);
 		rebuildTargetList();
 	}
@@ -818,6 +925,39 @@ public class SlayerPlugin extends Plugin
 
 		infoBoxManager.removeInfoBox(counter);
 		counter = null;
+	}
+
+	private void addProfitBox()
+	{
+		if (!config.showProfitBox() || profitbox != null || Strings.isNullOrEmpty(taskName))
+		{
+			return;
+		}
+		if(!taskName.isEmpty()){
+			BufferedImage goldImg = itemManager.getImage(1004);
+			String goldToolTip = ColorUtil.wrapWithColorTag("%s", new Color(255, 119, 0)) + "</br>";
+
+			goldToolTip += ColorUtil.wrapWithColorTag("This Task:", Color.YELLOW)
+					+ " %s</br>"
+					+ ColorUtil.wrapWithColorTag("Lifetime:", Color.YELLOW)
+					+ " %s";
+
+
+			profitbox = new TaskCounter(goldImg, this, config.currentGold());
+			int existingTaskGold = taskToGoldMap.containsKey(taskName) ? taskToGoldMap.get(taskName).getTotalGold() : 0;
+			profitbox.setTooltip(String.format(goldToolTip, capsString(taskName), config.currentGold(), existingTaskGold + config.currentGold()));
+
+			infoBoxManager.addInfoBox(profitbox);
+		}
+
+	}
+
+	private void removeProfitBox(){
+		if(profitbox == null){
+			return;
+		}
+		infoBoxManager.removeInfoBox(profitbox);
+		profitbox = null;
 	}
 
 	void taskLookup(ChatMessage chatMessage, String message)
