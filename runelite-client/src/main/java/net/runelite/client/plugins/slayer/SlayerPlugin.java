@@ -671,6 +671,7 @@ public class SlayerPlugin extends Plugin
 			}
 			config.currentGold(0);
 		}
+
 	}
 
 	private void incrementProfitTask(String taskName){
@@ -693,7 +694,6 @@ public class SlayerPlugin extends Plugin
 	}
 
 	private void dumpProfitToFile(){
-		saveTaskGoldToMap(taskName);
 		ObjectMapper mapper = new ObjectMapper();
 		try{
 			log.debug("PROFIT MAP SAVE: " + taskToGoldMap.toString());
@@ -937,7 +937,7 @@ void killed(int amt)
 			BufferedImage goldImg = itemManager.getImage(1004);
 			String goldToolTip = ColorUtil.wrapWithColorTag("%s", new Color(255, 119, 0)) + "</br>";
 
-			goldToolTip += ColorUtil.wrapWithColorTag("This Task:", Color.YELLOW)
+			goldToolTip += ColorUtil.wrapWithColorTag("This session:", Color.YELLOW)
 					+ " %s</br>"
 					+ ColorUtil.wrapWithColorTag("Lifetime:", Color.YELLOW)
 					+ " %s";
