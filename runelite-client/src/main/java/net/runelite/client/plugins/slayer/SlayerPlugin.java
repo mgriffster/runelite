@@ -511,15 +511,15 @@ public class SlayerPlugin extends Plugin
 			{
 				config.points(points);
 			}
-			saveTaskGoldToMap(config.taskName());
-			incrementProfitTask(config.taskName());
+			saveTaskGoldToMap(taskName);
+			incrementProfitTask(taskName);
 			setTask("", 0, 0);
 			return;
 		}
 
 		if (chatMsg.equals(CHAT_GEM_COMPLETE_MESSAGE) || chatMsg.equals(CHAT_CANCEL_MESSAGE) || chatMsg.equals(CHAT_CANCEL_MESSAGE_JAD) || chatMsg.equals(CHAT_CANCEL_MESSAGE_ZUK))
 		{
-			saveTaskGoldToMap(config.taskName());
+			saveTaskGoldToMap(taskName);
 			setTask("", 0, 0);
 			return;
 		}
@@ -674,17 +674,21 @@ public class SlayerPlugin extends Plugin
 
 	private void addTaskToProfitMap(String taskName){
 		if(!taskToGoldMap.containsKey(taskName)){
+			log.debug("TASK NAME: " + taskName);
 			taskToGoldMap.put(taskName, new ProfitEntry());
 		}
 	}
 
 	private void saveTaskGoldToMap(String taskName){
+
 		if(taskName != null && !taskName.isEmpty()){
 			if(taskToGoldMap.containsKey(taskName)){
+				log.debug("TASK NAME FOUND: " + taskName);
 				ProfitEntry oldInfo = taskToGoldMap.get(taskName);
 				oldInfo.setTotalGold(oldInfo.getTotalGold() + config.currentGold());
 			}
 			else{
+				log.debug("TASK NAME NOT FOUND: " + taskName);
 				taskToGoldMap.put(taskName, new ProfitEntry(config.currentGold(), 0 ,0));
 			}
 			config.currentGold(0);
