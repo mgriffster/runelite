@@ -12,3 +12,4 @@ project.properties
 .factorypath
 SlayerProfit.json
 SlayerProfit.json
+*.json
